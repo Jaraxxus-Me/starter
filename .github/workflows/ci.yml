@@ -29,10 +29,10 @@ jobs:
     - name: Set up Python ${{ matrix.python-version }}
       run: uv python install ${{ matrix.python-version }}    
     - name: Install the project
-      run: uv sync --all-extras --dev
+      run: uv venv && uv pip install -e ".[develop]"
     - name: Lint
       run: |
-        uv run pytest . --pylint -m pylint --pylint-rcfile=.pylintrc
+        .venv/bin/pytest . --pylint -m pylint --pylint-rcfile=.pylintrc
   static-type-checking:
     runs-on: ubuntu-latest
     strategy:
@@ -48,10 +48,10 @@ jobs:
     - name: Set up Python ${{ matrix.python-version }}
       run: uv python install ${{ matrix.python-version }}
     - name: Install the project
-      run: uv sync --all-extras --dev
+      run: uv venv && uv pip install -e ".[develop]"
     - name: Mypy
       run: |
-        uv run mypy .
+        .venv/bin/mypy .
   unit-tests:
     runs-on: ubuntu-latest
     strategy:
@@ -71,7 +71,7 @@ jobs:
     - name: Set up Python ${{ matrix.python-version }}
       run: uv python install ${{ matrix.python-version }}    
     - name: Install the project
-      run: uv sync --all-extras --dev
+      run: uv venv && uv pip install -e ".[develop]"
     - name: Pytest
       run: |
-       uv run pytest tests/
+       .venv/bin/pytest tests/
