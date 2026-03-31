@@ -112,5 +112,6 @@ module = [
     "huggingface_hub.*",
     "rich.*",
     "tyro.*",
+    "kinder.*",
 ]
 ignore_missing_imports = true
