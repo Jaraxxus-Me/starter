@@ -1,4 +1,4 @@
 #!/bin/bash
-python -m black .
-docformatter -i -r . --exclude venv
-isort .
+python -m black . --exclude "third-party|\.venv"
+docformatter -i -r . --exclude venv third-party
+isort . --skip-glob "third-party/*"

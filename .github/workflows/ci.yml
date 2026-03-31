@@ -7,8 +7,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      with:
-        submodules: true
+        with:
+          submodules: true
       - name: Run black to test code linting
         uses: psf/black@stable
         with:

@@ -1,3 +1,6 @@
 [submodule "third-party/kindergarden"]
 	path = third-party/kindergarden
 	url = https://github.com/Princeton-Robot-Planning-and-Learning/kindergarden
+[submodule "third-party/cleanrl"]
+	path = third-party/cleanrl
+	url = https://github.com/vwxyzjn/cleanrl
