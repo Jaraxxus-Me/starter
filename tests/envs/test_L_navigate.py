@@ -1,9 +1,11 @@
 """Tests for the L-navigate environment and oracle policy."""
 
 import numpy as np
+from gymnasium.wrappers import RecordVideo
 
 from starter.envs.l_navigate import LNavigateConfig, LNavigateEnv
 from starter.policy.oracles.L_navigate.oracle import LNavigateOracle
+from tests.conftest import MAKE_VIDEOS
 
 
 def test_env_reset_returns_valid_obs():
@@ -78,14 +80,19 @@ def test_render_rgb():
 
 def test_oracle_solves_env_single():
     """Oracle reaches the goal from a single starting position."""
-    env = LNavigateEnv()
+    env = LNavigateEnv(render_mode="rgb_array")
     oracle = LNavigateOracle()
+
+    if MAKE_VIDEOS:
+        env = RecordVideo(env, "unit_test_videos", name_prefix="l_navigate_oracle")
+
     obs, _ = env.reset(seed=42)
     for _ in range(500):
         action = oracle.act(obs)
         obs, _, terminated, _, _ = env.step(action)
         if terminated:
             break
+    env.close()
     assert terminated, f"Oracle failed to reach goal. Final position: {obs}"
 
 
