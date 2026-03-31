@@ -7,15 +7,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: true
       - name: Run black to test code linting
         uses: psf/black@stable
         with:
           options: "--check --verbose"
           jupyter: true
+          src: "src/ tests/"
       - name: Run isort to organize imports
         uses: isort/isort-action@master
+        with:
+          sortPaths: "src/ tests/"
   linting:
     runs-on: ubuntu-latest
     strategy:
@@ -36,7 +37,7 @@ jobs:
       run: uv venv && uv pip install -e ".[develop]"
     - name: Lint
       run: |
-        .venv/bin/pytest . --pylint -m pylint --pylint-rcfile=.pylintrc
+        .venv/bin/pytest src/ tests/ --pylint -m pylint --pylint-rcfile=.pylintrc
   static-type-checking:
     runs-on: ubuntu-latest
     strategy:
