@@ -59,10 +59,10 @@ def test_goal_termination():
 def test_not_terminated_at_start():
     """Robot should not be in the goal at reset."""
     env = LNavigateEnv()
-    obs, _ = env.reset(seed=0)
-    assert not env._is_in_goal(
-        float(obs[0]), float(obs[1])
-    )  # pylint: disable=protected-access
+    env.reset(seed=0)
+    # A no-op step from the start should not terminate.
+    _, _, terminated, _, _ = env.step(np.array([0.0, 0.0], dtype=np.float32))
+    assert not terminated
 
 
 def test_render_rgb():
