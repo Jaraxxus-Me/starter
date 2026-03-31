@@ -86,6 +86,7 @@ def test_oracle_solves_env_single():
     if MAKE_VIDEOS:
         env = RecordVideo(env, "unit_test_videos", name_prefix="l_navigate_oracle")
 
+
     obs, _ = env.reset(seed=42)
     for _ in range(500):
         action = oracle.act(obs)
