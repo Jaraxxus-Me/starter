@@ -185,8 +185,8 @@ class LNavigateEnv(gymnasium.Env):
         import matplotlib  # pylint: disable=import-outside-toplevel
 
         matplotlib.use("Agg")
-        from matplotlib import patches  # pylint: disable=import-outside-toplevel
         import matplotlib.pyplot as plt  # pylint: disable=import-outside-toplevel
+        from matplotlib import patches  # pylint: disable=import-outside-toplevel
 
         cfg = self.cfg
         fig, ax = plt.subplots(
