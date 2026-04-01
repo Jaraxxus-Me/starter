@@ -6,6 +6,7 @@ args:
   num_envs: 8
   num_steps: 256
   hidden_size: 128
+  async_envs: true
 
 torch_deterministic: true
 cuda: false
