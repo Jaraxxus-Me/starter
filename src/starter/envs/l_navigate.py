@@ -1,239 +1,277 @@
 """L-shaped 2D navigation environment.
 
-A simple continuous navigation task where the free space forms an "L" shape: a
-horizontal corridor joined to a vertical corridor. The robot must navigate from the
-horizontal corridor to a goal at the top of the vertical corridor.
+A simple continuous navigation task where one large rectangular obstacle in the upper-
+left corner creates an L-shaped free space. The robot starts in the horizontal part of
+the L and must reach a goal at the top of the vertical part.
 
-Follows the design of KinDER's Motion2D environment but implemented as a standalone
-gymnasium environment with no heavy dependencies.
+Inherits from KinDER's Motion2D environment.
 """
 
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
 
-import gymnasium
 import numpy as np
-from gymnasium.spaces import Box
-from numpy.typing import NDArray
+from kinder.core import ConstantObjectKinDEREnv, FinalConfigMeta
+from kinder.envs.kinematic2d.base_env import (
+    Kinematic2DRobotEnvConfig,
+    ObjectCentricKinematic2DRobotEnv,
+)
+from kinder.envs.kinematic2d.motion2d import TargetRegionType
+from kinder.envs.kinematic2d.object_types import (
+    CRVRobotType,
+    Kinematic2DRobotEnvTypeFeatures,
+    RectangleType,
+)
+from kinder.envs.kinematic2d.structs import SE2Pose, ZOrder
+from kinder.envs.kinematic2d.utils import CRVRobotActionSpace
+from kinder.envs.utils import BLACK, PURPLE, sample_se2_pose, state_2d_has_collision
+from relational_structs import Object, ObjectCentricState
 
 
 @dataclass(frozen=True)
-class LNavigateConfig:
-    """Configuration for the L-navigate environment."""
+class LNavigateEnvConfig(Kinematic2DRobotEnvConfig, metaclass=FinalConfigMeta):
+    """Config for the L-navigate environment.
 
-    # Horizontal corridor: x in [0, h_length], y in [0, h_width].
-    h_length: float = 3.0
-    h_width: float = 1.0
-
-    # Vertical corridor: x in [h_length - v_width, h_length],
-    #                     y in [0, v_height].
-    v_width: float = 1.0
-    v_height: float = 3.0
-
-    # Goal region at the top of the vertical corridor.
-    goal_x_min: float = 2.0  # = h_length - v_width
-    goal_x_max: float = 3.0  # = h_length
-    goal_y_min: float = 2.5
-    goal_y_max: float = 3.0  # = v_height
-
-    # Robot config.
-    robot_radius: float = 0.05
-    max_step_size: float = 0.1
-
-    # Rendering.
-    render_dpi: int = 150
-
-    def __post_init__(self) -> None:
-        assert self.v_width <= self.h_length
-        assert self.h_width <= self.v_height
-
-    @property
-    def intersection_x_min(self) -> float:
-        """Left edge of the intersection region."""
-        return self.h_length - self.v_width
-
-    @property
-    def intersection_x_max(self) -> float:
-        """Right edge of the intersection region."""
-        return self.h_length
-
-
-def _default_config() -> LNavigateConfig:
-    return LNavigateConfig()
-
-
-@dataclass(frozen=True)
-class LNavigateEnvParams:
-    """All parameters for environment construction."""
-
-    config: LNavigateConfig = field(default_factory=_default_config)
-
-
-class LNavigateEnv(gymnasium.Env):
-    """L-shaped 2D navigation environment.
-
-    The free space is the union of:
-      - Horizontal corridor: [0, h_length] x [0, h_width]
-      - Vertical corridor:   [h_length - v_width, h_length] x [0, v_height]
-
-    The robot starts uniformly in the horizontal corridor (excluding the
-    intersection), and must reach a goal region at the top of the vertical
-    corridor.
-
-    Observation: [robot_x, robot_y]
-    Action:      [dx, dy]  (clipped to max_step_size)
-    Reward:      -1.0 per step
-    Termination: robot center enters the goal region
+    The world is [0, 3] x [0, 3]. A single obstacle occupies the upper-left
+    region [0, 2] x [1, 3], leaving an L-shaped free space:
+      - Horizontal corridor: [0, 3] x [0, 1]
+      - Vertical corridor:   [2, 3] x [0, 3]
     """
 
-    metadata: dict[str, Any] = {"render_modes": ["rgb_array"]}
+    # World boundaries.
+    world_min_x: float = 0.0
+    world_max_x: float = 3.0
+    world_min_y: float = 0.0
+    world_max_y: float = 3.0
+
+    # Action space parameters (same as Motion2D).
+    min_dx: float = -5e-2
+    max_dx: float = 5e-2
+    min_dy: float = -5e-2
+    max_dy: float = 5e-2
+    min_dtheta: float = -np.pi / 16
+    max_dtheta: float = np.pi / 16
+    min_darm: float = -1e-1
+    max_darm: float = 1e-1
+    min_vac: float = 0.0
+    max_vac: float = 1.0
+
+    # Robot hyperparameters.
+    robot_base_radius: float = 0.1
+    robot_arm_length: float = 2 * robot_base_radius
+    robot_gripper_height: float = 0.07
+    robot_gripper_width: float = 0.01
+
+    # Robot starts in the horizontal corridor (left side).
+    robot_init_pose_bounds: tuple[SE2Pose, SE2Pose] = (
+        SE2Pose(
+            world_min_x + 2.5 * robot_base_radius,
+            world_min_y + 2.5 * robot_base_radius,
+            -np.pi,
+        ),
+        SE2Pose(
+            1.8,  # stay well left of the vertical corridor
+            1.0 - 2.5 * robot_base_radius,
+            np.pi,
+        ),
+    )
+
+    # Target region at the top of the vertical corridor.
+    target_region_rgb: tuple[float, float, float] = PURPLE
+    target_region_init_bounds: tuple[SE2Pose, SE2Pose] = (
+        SE2Pose(2.25, 2.5, 0),
+        SE2Pose(2.75, 2.75, 0),
+    )
+    target_region_shape: tuple[float, float] = (0.5, 0.5)
+
+    # Single obstacle: upper-left block creating the L-shape.
+    obstacle_rgb: tuple[float, float, float] = BLACK
+    obstacle_x: float = 0.0
+    obstacle_y: float = 1.0
+    obstacle_width: float = 2.0
+    obstacle_height: float = 2.0
+
+    # Rendering.
+    render_dpi: int = 300
+    render_fps: int = 20
+
+
+class ObjectCentricLNavigateEnv(
+    ObjectCentricKinematic2DRobotEnv[LNavigateEnvConfig],
+):
+    """L-shaped navigation: object-centric version.
+
+    One rectangular obstacle in the upper-left creates an L-shaped free space.
+    The robot must navigate from the horizontal corridor to a goal at the top
+    of the vertical corridor.
+    """
 
     def __init__(
         self,
-        config: LNavigateConfig | None = None,
-        render_mode: str | None = None,
+        config: LNavigateEnvConfig = LNavigateEnvConfig(),
+        **kwargs,
     ) -> None:
-        super().__init__()
-        self.cfg = config or LNavigateConfig()
-        self.render_mode = render_mode
+        super().__init__(config, **kwargs)
 
-        # Observation: robot (x, y).
-        self.observation_space = Box(
-            low=np.array([0.0, 0.0], dtype=np.float32),
-            high=np.array([self.cfg.h_length, self.cfg.v_height], dtype=np.float32),
+    def _sample_initial_state(self) -> ObjectCentricState:
+        robot_pose = sample_se2_pose(self.config.robot_init_pose_bounds, self.np_random)
+        target_region_pose = sample_se2_pose(
+            self.config.target_region_init_bounds, self.np_random
         )
 
-        # Action: (dx, dy).
-        s = self.cfg.max_step_size
-        self.action_space = Box(
-            low=np.array([-s, -s], dtype=np.float32),
-            high=np.array([s, s], dtype=np.float32),
-        )
+        # Single obstacle forming the L-shape.
+        obstacle_pose = SE2Pose(self.config.obstacle_x, self.config.obstacle_y, 0.0)
+        obstacle_shape = (self.config.obstacle_width, self.config.obstacle_height)
+        obstacles = [(obstacle_pose, obstacle_shape)]
 
-        self._robot_pos: NDArray[np.floating] = np.zeros(2, dtype=np.float32)
+        state = self._create_initial_state(robot_pose, target_region_pose, obstacles)
 
-    def _is_in_free_space(self, x: float, y: float) -> bool:
-        """Check whether position (x, y) is inside the L-shaped free space.
+        # Sanity check: robot and target should not collide with anything.
+        robot = state.get_objects(CRVRobotType)[0]
+        target_region = state.get_objects(TargetRegionType)[0]
+        assert not state_2d_has_collision(state, {robot, target_region}, set(state), {})
 
-        Accounts for robot radius so the robot body stays fully inside.
-        """
-        r = self.cfg.robot_radius
-        in_horizontal = (
-            r <= x <= self.cfg.h_length - r and r <= y <= self.cfg.h_width - r
-        )
-        in_vertical = (
-            self.cfg.intersection_x_min + r <= x <= self.cfg.h_length - r
-            and r <= y <= self.cfg.v_height - r
-        )
-        return in_horizontal or in_vertical
+        return state
 
-    def _is_in_goal(self, x: float, y: float) -> bool:
-        """Check whether the robot center is inside the goal region."""
-        return (
-            self.cfg.goal_x_min <= x <= self.cfg.goal_x_max
-            and self.cfg.goal_y_min <= y <= self.cfg.goal_y_max
-        )
-
-    def _sample_start(self) -> NDArray[np.floating]:
-        """Sample a start position in the horizontal corridor."""
-        r = self.cfg.robot_radius
-        # Horizontal corridor excluding intersection.
-        x = self.np_random.uniform(r, self.cfg.intersection_x_min - r)
-        y = self.np_random.uniform(r, self.cfg.h_width - r)
-        return np.array([x, y], dtype=np.float32)
-
-    def _get_obs(self) -> NDArray[np.floating]:
-        return self._robot_pos.copy()
-
-    def reset(
+    def _create_constant_initial_state_dict(
         self,
-        *,
-        seed: int | None = None,
-        options: dict[str, Any] | None = None,
-    ) -> tuple[NDArray[np.floating], dict[str, Any]]:
-        super().reset(seed=seed, options=options)
-        if options and "init_pos" in options:
-            self._robot_pos = np.array(options["init_pos"], dtype=np.float32)
-        else:
-            self._robot_pos = self._sample_start()
-        return self._get_obs(), {}
-
-    def step(
-        self, action: NDArray[np.floating]
-    ) -> tuple[NDArray[np.floating], float, bool, bool, dict[str, Any]]:
-        assert isinstance(self.action_space, Box)
-        action = np.clip(action, self.action_space.low, self.action_space.high)
-        new_pos = self._robot_pos + action
-        new_x, new_y = float(new_pos[0]), float(new_pos[1])
-
-        if self._is_in_free_space(new_x, new_y):
-            self._robot_pos = new_pos.astype(np.float32)
-
-        terminated = self._is_in_goal(
-            float(self._robot_pos[0]), float(self._robot_pos[1])
-        )
-        return self._get_obs(), -1.0, terminated, False, {}
-
-    def render(self) -> NDArray[np.uint8] | None:  # type: ignore[override]
-        """Render the environment as an RGB image."""
-        if self.render_mode != "rgb_array":
-            return None
-        return self._render_rgb()
-
-    def _render_rgb(self) -> NDArray[np.uint8]:
-        # Lazy import so matplotlib is only needed for rendering.
-        import matplotlib  # pylint: disable=import-outside-toplevel
-
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt  # pylint: disable=import-outside-toplevel
-        from matplotlib import patches  # pylint: disable=import-outside-toplevel
-
-        cfg = self.cfg
-        fig, ax = plt.subplots(
-            1, 1, figsize=(cfg.h_length, cfg.v_height), dpi=cfg.render_dpi
+    ) -> dict[Object, dict[str, float]]:
+        # Reuse Motion2D's wall creation.
+        from kinder.envs.kinematic2d.utils import (  # pylint: disable=import-outside-toplevel
+            create_walls_from_world_boundaries,
         )
 
-        # Background (obstacle / blocked region): upper-left block.
-        ax.set_xlim(0, cfg.h_length)
-        ax.set_ylim(0, cfg.v_height)
-        ax.set_facecolor("#333333")
-
-        # Draw free space.
-        h_rect = patches.Rectangle((0, 0), cfg.h_length, cfg.h_width, facecolor="white")
-        v_rect = patches.Rectangle(
-            (cfg.intersection_x_min, 0), cfg.v_width, cfg.v_height, facecolor="white"
+        init_state_dict: dict[Object, dict[str, float]] = {}
+        assert isinstance(self.action_space, CRVRobotActionSpace)
+        min_dx, min_dy = self.action_space.low[:2]
+        max_dx, max_dy = self.action_space.high[:2]
+        wall_state_dict = create_walls_from_world_boundaries(
+            self.config.world_min_x,
+            self.config.world_max_x,
+            self.config.world_min_y,
+            self.config.world_max_y,
+            min_dx,
+            max_dx,
+            min_dy,
+            max_dy,
         )
-        ax.add_patch(h_rect)
-        ax.add_patch(v_rect)
+        init_state_dict.update(wall_state_dict)
+        return init_state_dict
 
-        # Draw goal region.
-        goal_rect = patches.Rectangle(
-            (cfg.goal_x_min, cfg.goal_y_min),
-            cfg.goal_x_max - cfg.goal_x_min,
-            cfg.goal_y_max - cfg.goal_y_min,
-            facecolor="#80008040",
-            edgecolor="purple",
-            linewidth=1,
+    def _create_initial_state(
+        self,
+        robot_pose: SE2Pose,
+        target_region_pose: SE2Pose | None = None,
+        obstacles: list[tuple[SE2Pose, tuple[float, float]]] | None = None,
+    ) -> ObjectCentricState:
+        # Delegate to Motion2D's state creation pattern.
+        from relational_structs.utils import (  # pylint: disable=import-outside-toplevel
+            create_state_from_dict,
         )
-        ax.add_patch(goal_rect)
 
-        # Draw robot.
-        robot_circle = patches.Circle(
-            (float(self._robot_pos[0]), float(self._robot_pos[1])),
-            cfg.robot_radius,
-            facecolor="dodgerblue",
-            edgecolor="black",
-            linewidth=0.5,
+        init_state_dict: dict[Object, dict[str, float]] = {}
+
+        # Robot.
+        robot = Object("robot", CRVRobotType)
+        init_state_dict[robot] = {
+            "x": robot_pose.x,
+            "y": robot_pose.y,
+            "theta": robot_pose.theta,
+            "base_radius": self.config.robot_base_radius,
+            "arm_joint": self.config.robot_base_radius,
+            "arm_length": self.config.robot_arm_length,
+            "vacuum": 0.0,
+            "gripper_height": self.config.robot_gripper_height,
+            "gripper_width": self.config.robot_gripper_width,
+        }
+
+        # Target region.
+        if target_region_pose is not None:
+            target_region = Object("target_region", TargetRegionType)
+            init_state_dict[target_region] = {
+                "x": target_region_pose.x,
+                "y": target_region_pose.y,
+                "theta": target_region_pose.theta,
+                "width": self.config.target_region_shape[0],
+                "height": self.config.target_region_shape[1],
+                "static": True,
+                "color_r": self.config.target_region_rgb[0],
+                "color_g": self.config.target_region_rgb[1],
+                "color_b": self.config.target_region_rgb[2],
+                "z_order": ZOrder.NONE.value,
+            }
+
+        # Obstacles.
+        if obstacles:
+            for i, (obstacle_pose, obstacle_shape) in enumerate(obstacles):
+                obstacle = Object(f"obstacle{i}", RectangleType)
+                init_state_dict[obstacle] = {
+                    "x": obstacle_pose.x,
+                    "y": obstacle_pose.y,
+                    "theta": obstacle_pose.theta,
+                    "width": obstacle_shape[0],
+                    "height": obstacle_shape[1],
+                    "static": True,
+                    "color_r": self.config.obstacle_rgb[0],
+                    "color_g": self.config.obstacle_rgb[1],
+                    "color_b": self.config.obstacle_rgb[2],
+                    "z_order": ZOrder.ALL.value,
+                }
+
+        return create_state_from_dict(init_state_dict, Kinematic2DRobotEnvTypeFeatures)
+
+    def _get_reward_and_done(self) -> tuple[float, bool]:
+        from kinder.envs.kinematic2d.utils import (  # pylint: disable=import-outside-toplevel
+            rectangle_object_to_geom,
         )
-        ax.add_patch(robot_circle)
 
-        ax.set_aspect("equal")
-        ax.axis("off")
-        fig.tight_layout(pad=0)
+        assert self._current_state is not None
+        robot = self._current_state.get_objects(CRVRobotType)[0]
+        x = self._current_state.get(robot, "x")
+        y = self._current_state.get(robot, "y")
+        target_region = self._current_state.get_objects(TargetRegionType)[0]
+        target_region_geom = rectangle_object_to_geom(
+            self._current_state,
+            target_region,
+            self._static_object_body_cache,
+        )
+        terminated = target_region_geom.contains_point(x, y)
+        return -1.0, terminated
 
-        # Convert to numpy array.
-        fig.canvas.draw()
-        buf = fig.canvas.buffer_rgba()  # type: ignore[attr-defined]
-        img = np.asarray(buf)[:, :, :3].copy()
-        plt.close(fig)
-        return img
+
+class LNavigateEnv(ConstantObjectKinDEREnv):
+    """L-navigate env with constant number of objects and Box spaces."""
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+
+    def _create_object_centric_env(
+        self, *args, **kwargs
+    ) -> ObjectCentricKinematic2DRobotEnv:
+        return ObjectCentricLNavigateEnv(*args, **kwargs)
+
+    def _get_constant_object_names(
+        self, exemplar_state: ObjectCentricState
+    ) -> list[str]:
+        constant_objects = ["robot", "target_region"]
+        for obj in sorted(exemplar_state):
+            if obj.name.startswith("obstacle"):
+                constant_objects.append(obj.name)
+        return constant_objects
+
+    def _create_env_markdown_description(self) -> str:
+        return (
+            "An L-shaped 2D navigation environment. A single rectangular "
+            "obstacle in the upper-left corner creates an L-shaped free space. "
+            "The robot must navigate from the horizontal corridor to a goal "
+            "at the top of the vertical corridor.\n"
+        )
+
+    def _create_reward_markdown_description(self) -> str:
+        return (
+            "A penalty of -1.0 is given at every time step until termination, "
+            "which occurs when the robot's position is within the target "
+            "region.\n"
+        )
+
+    def _create_references_markdown_description(self) -> str:
+        return "L-shaped corridors are a basic test for navigation planning.\n"
