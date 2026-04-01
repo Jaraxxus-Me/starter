@@ -1,6 +1,8 @@
 .DS_Store
 .python-version
 unit_test_videos/
+outputs/
+runs/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
