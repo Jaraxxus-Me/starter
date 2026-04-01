@@ -32,9 +32,9 @@ jobs:
         enable-cache: true
         cache-dependency-glob: "pyproject.toml"
     - name: Set up Python ${{ matrix.python-version }}
-      run: uv python install ${{ matrix.python-version }}    
+      run: uv python install ${{ matrix.python-version }}
     - name: Install the project
-      run: uv venv && uv pip install -e ".[develop]"
+      run: uv venv && uv pip install -e third-party/kindergarden && uv pip install -e ".[develop]"
     - name: Lint
       run: |
         .venv/bin/pytest src/ tests/ --pylint -m pylint --pylint-rcfile=.pylintrc
@@ -55,7 +55,7 @@ jobs:
     - name: Set up Python ${{ matrix.python-version }}
       run: uv python install ${{ matrix.python-version }}
     - name: Install the project
-      run: uv venv && uv pip install -e ".[develop]"
+      run: uv venv && uv pip install -e third-party/kindergarden && uv pip install -e ".[develop]"
     - name: Mypy
       run: |
         .venv/bin/mypy .
@@ -80,7 +80,7 @@ jobs:
     - name: Set up Python ${{ matrix.python-version }}
       run: uv python install ${{ matrix.python-version }}    
     - name: Install the project
-      run: uv venv && uv pip install -e ".[develop]"
+      run: uv venv && uv pip install -e third-party/kindergarden && uv pip install -e ".[develop]"
     - name: Pytest
       run: |
        .venv/bin/pytest tests/
