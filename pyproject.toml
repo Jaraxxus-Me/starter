@@ -103,6 +103,9 @@ disallow_untyped_calls = true
 warn_unreachable = true
 exclude = ["venv/*", ".venv/*", "third-party/*"]
 
+[tool.pytest.ini_options]
+markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
+
 [[tool.mypy.overrides]]
 module = [
     "matplotlib.*",

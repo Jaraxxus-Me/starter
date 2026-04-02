@@ -275,3 +275,65 @@ class LNavigateEnv(ConstantObjectKinDEREnv):
 
     def _create_references_markdown_description(self) -> str:
         return "L-shaped corridors are a basic test for navigation planning.\n"
+
+
+class ObjectCentricFixedLNavigateEnv(ObjectCentricLNavigateEnv):
+    """L-navigate with fixed initial robot and target positions.
+
+    Robot starts at the center of the intersection region (2.5, 0.5). Target is fixed at
+    (2.5, 1.0).
+    """
+
+    FIXED_ROBOT_POSE = SE2Pose(2.5, 0.5, 0.0)
+    FIXED_TARGET_POSE = SE2Pose(2.5, 1.0, 0.0)
+
+    def _sample_initial_state(self) -> ObjectCentricState:
+        obstacle_pose = SE2Pose(self.config.obstacle_x, self.config.obstacle_y, 0.0)
+        obstacle_shape = (self.config.obstacle_width, self.config.obstacle_height)
+        obstacles = [(obstacle_pose, obstacle_shape)]
+        state = self._create_initial_state(
+            self.FIXED_ROBOT_POSE,
+            self.FIXED_TARGET_POSE,
+            obstacles,
+        )
+        robot = state.get_objects(CRVRobotType)[0]
+        target_region = state.get_objects(TargetRegionType)[0]
+        assert not state_2d_has_collision(state, {robot, target_region}, set(state), {})
+        return state
+
+
+class FixedLNavigateEnv(ConstantObjectKinDEREnv):
+    """Fixed L-navigate env with constant object count and Box spaces."""
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+
+    def _create_object_centric_env(
+        self, *args, **kwargs
+    ) -> ObjectCentricKinematic2DRobotEnv:
+        return ObjectCentricFixedLNavigateEnv(*args, **kwargs)
+
+    def _get_constant_object_names(
+        self, exemplar_state: ObjectCentricState
+    ) -> list[str]:
+        constant_objects = ["robot", "target_region"]
+        for obj in sorted(exemplar_state):
+            if obj.name.startswith("obstacle"):
+                constant_objects.append(obj.name)
+        return constant_objects
+
+    def _create_env_markdown_description(self) -> str:
+        return (
+            "Fixed L-shaped 2D navigation environment with deterministic "
+            "initial robot and target positions for overfitting tests.\n"
+        )
+
+    def _create_reward_markdown_description(self) -> str:
+        return (
+            "A penalty of -1.0 is given at every time step until termination, "
+            "which occurs when the robot's position is within the target "
+            "region.\n"
+        )
+
+    def _create_references_markdown_description(self) -> str:
+        return "Fixed variant of L-navigate for overfitting experiments.\n"
