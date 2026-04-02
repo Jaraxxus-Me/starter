@@ -67,6 +67,9 @@ class PPOArgs:
     # Parallelization.
     async_envs: bool = False
 
+    # Wrappers.
+    normalize: bool = True
+
     # Computed at runtime.
     batch_size: int = 0
     minibatch_size: int = 0
@@ -246,7 +249,12 @@ class PPOAgent(BaseRLAgent):
         episodic_returns: list[float] = []
 
         env_fns = [
-            make_env(self.env_id, self.max_episode_steps, gamma=args.gamma)
+            make_env(
+                self.env_id,
+                self.max_episode_steps,
+                gamma=args.gamma,
+                normalize=args.normalize,
+            )
             for _ in range(args.num_envs)
         ]
         envs: gym.vector.VectorEnv

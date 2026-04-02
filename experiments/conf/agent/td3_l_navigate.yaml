@@ -1,0 +1,23 @@
+# TD3 agent configuration for L-navigate environment
+name: td3
+
+args:
+  total_timesteps: 1000000
+  num_envs: 1
+  hidden_size: 256
+  learning_rate: 3e-4
+  buffer_size: 1000000
+  batch_size: 256
+  learning_starts: 25000
+  gamma: 0.99
+  tau: 0.005
+  policy_frequency: 2
+  exploration_noise: 0.1
+  policy_noise: 0.2
+  noise_clip: 0.5
+
+torch_deterministic: true
+cuda: false
+
+exp_name: "td3_l_navigate"
+tb_log_dir: "runs"
